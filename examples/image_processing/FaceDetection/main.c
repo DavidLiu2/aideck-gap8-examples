@@ -30,8 +30,9 @@
 /* Gaplib includes */
 // #include "gaplib/ImgIO.h"
 
-#if defined(USE_STREAMER)
 #include "cpx.h"
+
+#if defined(USE_STREAMER)
 #include "wifi.h"
 #endif /* USE_STREAMER */
 
@@ -62,6 +63,16 @@ static int wifiConnected = 0;
 static int wifiClientConnected = 0;
 
 static pi_task_t task1;
+
+/* ---- Global handle for GAP8 ➜ Flight Ctrl channel ---- */
+static cpxChannelHandle_t fc_chan;
+
+/* ---- Helper to send the face centre (uint16 x,y) ---- */
+static inline void send_face(uint16_t cx, uint16_t cy, uint16_t area)
+{
+    uint16_t pkt[3] = {cx, cy, area};    /* 6 bytes */
+    cpxSendPacket(fc_chan, (uint8_t*)pkt, sizeof(pkt));   /* non-blocking */
+}
 
 static CPXPacket_t rxp;
 void rx_task(void *parameters)
@@ -357,6 +368,9 @@ void facedetection_task(void)
   EventBits_t evBits;
   pi_camera_control(&cam, PI_CAMERA_CMD_STOP, 0);
 
+  /* ---- Open a CPX channel to the STM32 app-layer ---- */
+  fc_chan = cpxOpenChannel(CPX_T_CPU, CPX_FC_APP);  /* GAP8 ➜ FC */  /* :contentReference[oaicite:2]{index=2} */
+
   while (1 && (NB_FRAMES == -1 || nb_frames < NB_FRAMES))
   {
     // Capture image
@@ -376,7 +390,7 @@ void facedetection_task(void)
 
     // Send task to the cluster and print response
     pi_cluster_send_task_to_cl(&cluster_dev, task);
-    // cpxPrintToConsole(LOG_TO_CRTP, "end of face detection, faces detected: %d\n", ClusterCall.num_reponse);
+    cpxPrintToConsole(LOG_TO_CRTP, "end of face detection, faces detected: %d\n", ClusterCall.num_reponse);
 
 #if defined(USE_STREAMER)
     if (wifiClientConnected == 1)
@@ -390,6 +404,15 @@ void facedetection_task(void)
 #endif
     // Send result through the uart to the crazyflie as single characters
     pi_uart_write(&uart, &ClusterCall.num_reponse, 1);
+
+    if (ClusterCall.num_reponse > 0) {  // at least one face found
+        const face_t *f = &ClusterCall.reponses[0];   // largest/first face
+        uint16_t cx   = f->x + (f->w >> 1);
+        uint16_t cy   = f->y + (f->h >> 1);
+        uint16_t area = f->w * f->h;     // optional distance proxy
+
+        send_face(cx, cy, area);
+    }
 
     nb_frames++;
   }

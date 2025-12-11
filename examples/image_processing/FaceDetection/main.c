@@ -38,7 +38,7 @@
 
 // All includes for facedetector application
 #include "faceDet.h"
-#include "FaceDetKernels.h"
+#include "FaceDetBasicKernels.h"
 #include "ImageDraw.h"
 #include "setup.h"
 
@@ -65,13 +65,21 @@ static int wifiClientConnected = 0;
 static pi_task_t task1;
 
 /* ---- Global handle for GAP8 ➜ Flight Ctrl channel ---- */
-static cpxChannelHandle_t fc_chan;
-
-/* ---- Helper to send the face centre (uint16 x,y) ---- */
-static inline void send_face(uint16_t cx, uint16_t cy, uint16_t area)
+static CPXPacket_t facePkt;                
+static inline void send_face(uint16_t cx,
+                             uint16_t cy,
+                             uint16_t area)
 {
-    uint16_t pkt[3] = {cx, cy, area};    /* 6 bytes */
-    cpxSendPacket(fc_chan, (uint8_t*)pkt, sizeof(pkt));   /* non-blocking */
+    facePkt.route.destination = CPX_T_STM32;   // Crazyflie STM32
+    facePkt.route.source      = CPX_T_GAP8;
+    facePkt.route.function    = CPX_F_APP;     // any free function id
+    facePkt.route.version     = CPX_VERSION;
+
+    uint16_t *p = (uint16_t *)facePkt.data;
+    p[0] = cx;  p[1] = cy;  p[2] = area;
+    facePkt.dataLength = 6;
+
+    cpxSendPacketBlocking(&facePkt);
 }
 
 static CPXPacket_t rxp;
@@ -369,7 +377,7 @@ void facedetection_task(void)
   pi_camera_control(&cam, PI_CAMERA_CMD_STOP, 0);
 
   /* ---- Open a CPX channel to the STM32 app-layer ---- */
-  fc_chan = cpxOpenChannel(CPX_T_CPU, CPX_FC_APP);  /* GAP8 ➜ FC */  /* :contentReference[oaicite:2]{index=2} */
+  facePkt.route.version = CPX_VERSION;       // already set in helper
 
   while (1 && (NB_FRAMES == -1 || nb_frames < NB_FRAMES))
   {
@@ -406,7 +414,7 @@ void facedetection_task(void)
     pi_uart_write(&uart, &ClusterCall.num_reponse, 1);
 
     if (ClusterCall.num_reponse > 0) {  // at least one face found
-        const face_t *f = &ClusterCall.reponses[0];   // largest/first face
+        const cascade_reponse_t *f = &ClusterCall.reponses[0]; // take the largest face found
         uint16_t cx   = f->x + (f->w >> 1);
         uint16_t cy   = f->y + (f->h >> 1);
         uint16_t area = f->w * f->h;     // optional distance proxy

@@ -18,7 +18,7 @@
 #define __FACE_DET_H__
 
 #include "pmsis.h"
-#include "FaceDetKernels.h"
+#include "FaceDetBasicKernels.h"
 #include "stdio.h"
 #include "setup.h"
 

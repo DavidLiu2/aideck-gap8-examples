@@ -50,7 +50,7 @@ APP_CFLAGS += -DHIMAX
 
 PLPBRIDGE_FLAGS += -jtag
 
-all:: model
+#all:: model
 
 # Build the code generator
 GenTile:
